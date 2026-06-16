@@ -19,4 +19,5 @@ train:
     save_every: 250
     eval_every: 250
 
+  overfit_one_batch: true
   output_dir: runs/overfit

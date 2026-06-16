@@ -1,0 +1,6 @@
+defaults:
+  - ../dataset/board_clean
+  - ../model/mlp
+  - ../train/overfit
+
+experiment_name: overfit_mlp_board_clean

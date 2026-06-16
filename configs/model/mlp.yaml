@@ -1,0 +1,13 @@
+model:
+  name: mlp
+  type: mlp_policy
+
+  inputs:
+    use_state: true
+    use_images: false
+
+  hidden_dims:
+    - 256
+    - 256
+  activation: relu
+  dropout: 0.0

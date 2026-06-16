@@ -1,0 +1,23 @@
+dataset:
+  name: board_clean
+  repo_id: NLTuan/board_clean
+
+  keys:
+    state: observation.state
+    action: action
+    images:
+      - observation.images.main
+
+  horizons:
+    obs: 1
+    action: 50
+
+  loader:
+    batch_size: 32
+    shuffle: true
+    num_workers: 4
+    pin_memory: auto
+
+  normalization:
+    state: standard
+    action: standard

@@ -1,22 +1,10 @@
 [project]
 name = "robot-control-policies"
 version = "0.1.0"
-description = "Clean robot control policy replication scaffold"
+description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.14"
 dependencies = [
-    "torch>=2.0.0",
-    "torchvision",
-    "numpy",
-    "pyyaml",
-    "tqdm",
-    "tensorboard",
-    "huggingface-hub",
-    "lerobot",
-    "einops",
-    "ema-pytorch",
+    "lerobot>=0.5.1",
+    "torch>=2.10.0",
 ]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"

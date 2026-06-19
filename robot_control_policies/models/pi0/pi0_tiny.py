@@ -143,6 +143,40 @@ class TaskTokenEmbedder(nn.Module):
             return self.null_task_token.expand(batch_size, -1, -1)
         return self.token_emb(task_token_ids)
 
+
+class SelfAttention(nn.Module):
+    """Self attention with RoPE embeddings applied inside attention."""
+    def __init__(self, hidden_dim, num_heads):
+        super().__init__()
+        if hidden_dim % num_heads != 0:
+            raise ValueError("hidden_dim must be divisible by num_heads")
+        self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.head_dim = hidden_dim // num_heads
+
+        self.qkv_proj = nn.Linear(hidden_dim, 3 * hidden_dim)
+        self.out_proj = nn.Linear(hidden_dim, hidden_dim)
+
+    def forward(self, x, cos, sin):
+        batch_size, seq_len, _ = x.shape
+        
+        qkv = self.qkv_proj(x)  # [B, seq_len, 3*hidden_dim]
+        q, k, v = qkv.chunk(3, dim=-1)
+
+        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)  # [B, num_heads, seq_len, head_dim]
+        k = k.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        v = v.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+
+        q = apply_rope(q, cos, sin)
+        k = apply_rope(k, cos, sin)
+
+        attn_scores = torch.matmul(q, k.transpose(-2, -1)) / (self.head_dim ** 0.5)  # [B, num_heads, seq_len, seq_len]
+        attn_weights = torch.softmax(attn_scores, dim=-1)
+        attn_output = torch.matmul(attn_weights, v)  # [B, num_heads, seq_len, head_dim]
+        attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.hidden_dim)  # [B, seq_len, hidden_dim]
+        return x + self.out_proj(attn_output)
+    
+
 class Pi0Tiny(nn.Module):
     """Tiny pi0-style scaffold for learning the model contract.
 
@@ -163,54 +197,88 @@ class Pi0Tiny(nn.Module):
         num_heads=4,
         vocab_size=32000,
         image_channels=3,
+        image_size=64,
+        patch_size=16,
+        image_encoder_depth=2,
         max_action_horizon=256,
     ):
         super().__init__()
+        if hidden_dim % num_heads != 0:
+            raise ValueError("hidden_dim must be divisible by num_heads")
+        if action_horizon > max_action_horizon:
+            raise ValueError("action_horizon cannot exceed max_action_horizon")
 
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.action_horizon = action_horizon
         self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.max_action_horizon = max_action_horizon
 
-        # TODO: state -> one state token [B, 1, hidden_dim]
-        # self.state_proj = ...
+        # state -> one state token [B, 1, hidden_dim]
+        self.state_proj = nn.Linear(state_dim, hidden_dim)
 
-        # TODO: images -> image tokens [B, num_image_tokens, hidden_dim]
-        # self.image_encoder = ...
+        # images -> image tokens [B, num_image_tokens, hidden_dim]
+        self.image_encoder = TinyImageEncoder(
+            channels=image_channels,
+            hidden_dim=hidden_dim,
+            image_size=image_size,
+            patch_size=patch_size,
+            num_blocks=image_encoder_depth,
+            num_heads=num_heads,
+        )
 
-        # TODO: task token ids -> task tokens [B, task_len, hidden_dim]
-        # self.task_token_emb = ...
-        # self.null_task_token = ...
+        # task token ids -> task tokens [B, task_len, hidden_dim]
+        self.task_embedder = TaskTokenEmbedder(vocab_size=vocab_size, hidden_dim=hidden_dim)
 
-        # TODO: noisy action chunk -> action tokens [B, action_horizon, hidden_dim]
-        # self.action_proj = ...
+        # noisy action chunk -> action tokens [B, action_horizon, hidden_dim]
+        self.action_proj = nn.Linear(action_dim, hidden_dim)
 
-        # TODO: scalar flow time -> conditioning vector [B, hidden_dim]
-        # self.time_emb = ...
+        # scalar flow time -> conditioning vector [B, hidden_dim]
+        self.time_emb = nn.Sequential(
+            nn.Linear(1, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
 
-        # TODO: RoPE for attention positions.
-        # This requires a custom attention block instead of plain
-        # nn.TransformerEncoderLayer, because PyTorch's stock layer does not
-        # expose q/k before attention.
-        #
-        # head_dim = hidden_dim // num_heads
-        # self.rope = RotaryPositionEmbedding(head_dim)
+        # RoPE for the custom token mixer attention.
+        head_dim = hidden_dim // num_heads
+        self.rope = RotaryPositionEmbedding(head_dim)
 
         # TODO: tiny token mixer.
-        # If using RoPE, write a small Transformer block yourself:
+        # Write a small RoPE transformer block yourself:
         #   x -> norm -> qkv projection
         #   q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
         #   attention -> residual -> MLP -> residual
         # self.transformer = ...
+        self.depth = depth
+        self.attn_layers = nn.ModuleList([SelfAttention(hidden_dim, num_heads) for _ in range(depth)])
+        self.mlp_action_layers = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(hidden_dim, 4 * hidden_dim),
+                    nn.GELU(),
+                    nn.Linear(4 * hidden_dim, hidden_dim),
+                )
+                for _ in range(depth)
+            ]
+        )
+        self.mlp_obs_layers = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(hidden_dim, 4 * hidden_dim),
+                    nn.GELU(),
+                    nn.Linear(4 * hidden_dim, hidden_dim),
+                )
+                for _ in range(depth)
+            ]
+        )   
 
-        # TODO: action tokens -> predicted flow [B, action_horizon, action_dim]
-        # self.flow_head = ...
+        # action tokens -> predicted flow [B, action_horizon, action_dim]
+        self.flow_head = nn.Linear(hidden_dim, action_dim)
 
     def embed_task(self, task_tokens, batch_size):
-        # TODO:
-        # 1. If task_tokens is None, return a learned null task token.
-        # 2. Otherwise embed token ids with self.task_token_emb.
-        raise NotImplementedError
+        return self.task_embedder(task_tokens, batch_size)
 
     def forward(self, state, noisy_actions, t, images=None, task_tokens=None):
         """Predict flow for noisy action tokens.
@@ -226,19 +294,40 @@ class Pi0Tiny(nn.Module):
           pred_flow:     [B, action_horizon, action_dim]
         """
 
-        # TODO:
-        # 1. Read batch_size and action_horizon from noisy_actions.
-        # 2. Project state to one token.
-        # 3. Encode images to image tokens.
-        # 4. Embed task tokens.
-        # 5. Project noisy_actions to action tokens.
-        # 6. Add time embedding to action tokens.
-        # 7. Concatenate [state, image, task, action] tokens.
-        # 8. Build RoPE cos/sin for total token sequence length.
-        # 9. Run the transformer with RoPE applied inside attention.
-        # 10. Slice out the final action tokens.
-        # 11. Project action tokens to predicted flow.
-        raise NotImplementedError
+        batch_size, action_horizon, _ = noisy_actions.shape
+        if action_horizon != self.action_horizon:
+            raise ValueError(
+                f"expected action_horizon={self.action_horizon}, got {action_horizon}"
+            )
+
+        if t.ndim == 0:
+            t = t.expand(batch_size)
+
+        state_token = self.state_proj(state.float())[:, None, :]
+        image_tokens = self.image_encoder(images, batch_size=batch_size)
+        task_tokens = self.embed_task(task_tokens, batch_size=batch_size)
+
+        context_tokens = torch.cat([state_token, image_tokens, task_tokens], dim=1)
+
+        action_tokens = self.action_proj(noisy_actions.float())
+        time_emb = self.time_emb(t.float().reshape(batch_size, 1))
+        action_tokens = action_tokens + time_emb[:, None, :]
+
+        for layer_idx in range(self.depth):
+            tokens = torch.cat([context_tokens, action_tokens], dim=1)
+            cos, sin = self.rope(tokens.shape[1], device=tokens.device)
+            tokens = self.attn_layers[layer_idx](tokens, cos, sin)
+
+            context_tokens, action_tokens = torch.split(
+                tokens,
+                [context_tokens.shape[1], action_tokens.shape[1]],
+                dim=1,
+            )
+
+            context_tokens = context_tokens + self.mlp_obs_layers[layer_idx](context_tokens)
+            action_tokens = action_tokens + self.mlp_action_layers[layer_idx](action_tokens)
+
+        return self.flow_head(action_tokens)
 
     def compute_loss(self, state, actions, images=None, task_tokens=None):
         """TODO: Flow-matching objective.

@@ -50,7 +50,7 @@ def apply_rope(x, cos, sin):
 
 
 class TinyImageEncoder(nn.Module):
-    """TODO: Placeholder image encoder for shape plumbing.
+    """Small ViT-style image encoder for shape plumbing.
 
     Target contract:
       images is either:
@@ -58,50 +58,90 @@ class TinyImageEncoder(nn.Module):
         [B, T, C, H, W]
 
       return:
-        [B, T, hidden_dim]
+        [B, T * num_patches, hidden_dim]
 
-    Treat `T` as the number of image tokens for now. It can mean time,
-    camera-view count, or time x camera after the dataloader standardizes it.
+    Treat `T` as time, camera-view count, or time x camera after the dataloader
+    standardizes it.
     """
 
-    def __init__(self,
+    def __init__(
+        self,
         channels,
         hidden_dim=128,
         image_size=64,
         patch_size=16,
         num_blocks=2,
+        num_heads=4,
     ):
         super().__init__()
-        # TODO:
-        # 1. Add a learned null image token for image-free smoke tests.
-        # 2. Add a tiny CNN or projection that maps images -> hidden_dim.
-        self.patchifier = nn.Conv2d(channels, hidden_dim, kernel_size=patch_size, stride=patch_size)
+        if image_size % patch_size != 0:
+            raise ValueError("image_size must be divisible by patch_size")
 
-        self.vit_layers = nn.ModuleList([
-            nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=4)
-            for _ in range(num_blocks)]
+        self.channels = channels
+        self.hidden_dim = hidden_dim
+        self.image_size = image_size
+        self.patch_size = patch_size
+        self.num_patches = (image_size // patch_size) ** 2
+
+        self.null_image_token = nn.Parameter(torch.zeros(1, 1, hidden_dim))
+        self.patchifier = nn.Conv2d(
+            channels,
+            hidden_dim,
+            kernel_size=patch_size,
+            stride=patch_size,
+        )
+        self.pos_emb = nn.Parameter(torch.zeros(1, self.num_patches, hidden_dim))
+
+        self.vit_layers = nn.ModuleList(
+            [
+                nn.TransformerEncoderLayer(
+                    d_model=hidden_dim,
+                    nhead=num_heads,
+                    batch_first=True,
+                    activation="gelu",
+                )
+                for _ in range(num_blocks)
+            ]
         )
 
-
     def forward(self, images, batch_size):
-        # TODO:
+        if images is None:
+            return self.null_image_token.expand(batch_size, -1, -1)
+
+        if images.ndim != 5:
+            raise ValueError(f"images must have shape [B, T, C, H, W], got {images.shape}")
+
+        batch, num_images, channels, height, width = images.shape
+        if batch != batch_size:
+            raise ValueError(f"batch_size={batch_size} but images batch={batch}")
+        if channels != self.channels:
+            raise ValueError(f"expected {self.channels} image channels, got {channels}")
+        if height != self.image_size or width != self.image_size:
+            raise ValueError(
+                f"expected image size {self.image_size}x{self.image_size}, "
+                f"got {height}x{width}"
+            )
+
         images = self.patchifier(images.flatten(0, 1))  # [B*T, hidden_dim, H', W']
         images = images.flatten(2).transpose(1, 2)  # [B*T, num_patches, hidden_dim]
+        images = images + self.pos_emb
 
         for layer in self.vit_layers:
             images = layer(images)
 
-        return images.view(batch_size, -1, self.patchifier.out_channels)  # [B, T*num_patches, hidden_dim]
+        return images.reshape(batch_size, num_images * self.num_patches, self.hidden_dim)
+
 
 class TaskTokenEmbedder(nn.Module):
     def __init__(self, vocab_size, hidden_dim):
         super().__init__()
         self.token_emb = nn.Embedding(vocab_size, hidden_dim)
+        self.null_task_token = nn.Parameter(torch.zeros(1, 1, hidden_dim))
 
-    def forward(self, task_token_ids):
+    def forward(self, task_token_ids, batch_size):
+        if task_token_ids is None:
+            return self.null_task_token.expand(batch_size, -1, -1)
         return self.token_emb(task_token_ids)
-
-
 
 class Pi0Tiny(nn.Module):
     """Tiny pi0-style scaffold for learning the model contract.

@@ -30,6 +30,34 @@ robot-control-policies/
     train_mlp.py    # current MLP training entrypoint
 ```
 
+## uv Setup
+
+This repo uses [uv](https://docs.astral.sh/uv/) to manage the Python environment
+and install dependencies from `pyproject.toml`.
+
+`uv sync` installs both the dependencies and this project itself into the
+managed environment in editable mode, so local code changes are picked up
+without reinstalling.
+
+1. Install uv if you do not already have it.
+2. Create and sync the environment:
+
+```bash
+uv sync
+```
+
+3. Run commands through uv so they use the managed environment:
+
+```bash
+uv run python trainers/train_mlp.py --config configs/experiment/mlp_board_clean.yaml
+```
+
+For an overfit test:
+
+```bash
+uv run python trainers/train_mlp.py --config configs/experiment/overfit_mlp_board_clean.yaml
+```
+
 ## Config System
 
 Configs are split by responsibility.

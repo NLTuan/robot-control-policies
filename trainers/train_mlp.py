@@ -25,6 +25,12 @@ def make_optimizer(model, optimizer_cfg):
     raise ValueError(f"Unsupported optimizer: {optimizer_cfg['name']}")
 
 
+def count_parameters(model):
+    total = sum(param.numel() for param in model.parameters())
+    trainable = sum(param.numel() for param in model.parameters() if param.requires_grad)
+    return total, trainable
+
+
 def flatten_batch(batch, config):
     state_key = config["dataset"]["keys"]["state"]
     action_key = config["dataset"]["keys"]["action"]
@@ -48,6 +54,8 @@ def train(config_path="configs/experiment/mlp_board_clean.yaml"):
         hidden_dims=config["model"]["hidden_dims"],
     ).to(device)
 
+    total_params, trainable_params = count_parameters(model)
+
     optimizer = make_optimizer(model, config["train"]["optimizer"])
     loss_fn = nn.MSELoss()
 
@@ -59,6 +67,7 @@ def train(config_path="configs/experiment/mlp_board_clean.yaml"):
     print(f"input shape: {tuple(x.shape)}")
     print(f"target shape: {tuple(y.shape)}")
     print(f"device: {device}")
+    print(f"parameters: total={total_params:,} trainable={trainable_params:,}")
 
     step = 0
     while step < max_steps:

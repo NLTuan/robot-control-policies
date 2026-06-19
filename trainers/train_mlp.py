@@ -38,8 +38,8 @@ def flatten_batch(batch, config):
 
     state = batch[state_key].float().flatten(start_dim=1)
     action = batch[action_key].float().flatten(start_dim=1)
-    images = [batch[key].float().flatten(start_dim=1) for key in image_keys]
-    return state, action, images
+    state = torch.cat([batch[key].float().flatten(start_dim=1).flatten(start_dim=1) for key in image_keys] + [state], dim=1)
+    return state, action
 
 
 def train(config_path="configs/experiment/mlp_board_clean.yaml", cli_overrides=None):
@@ -48,9 +48,6 @@ def train(config_path="configs/experiment/mlp_board_clean.yaml", cli_overrides=N
 
     first_batch = next(iter(dataloader))
 
-    print("=== Dataset Sample ===")
-    print({key: value.shape for key, value in first_batch.items() if type(value) is torch.Tensor})
-    print("======================")
     x, y = flatten_batch(first_batch, config)
     device = get_device(config["train"])
 

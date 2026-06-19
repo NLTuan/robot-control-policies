@@ -144,6 +144,16 @@ class TaskTokenEmbedder(nn.Module):
         return self.token_emb(task_token_ids)
 
 
+class RMSNorm(nn.Module):
+    def __init__(self, hidden_dim, eps=1e-8):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(hidden_dim))
+
+    def forward(self, x):
+        norm = x.pow(2).mean(dim=-1, keepdim=True) + self.eps
+        return x / norm.sqrt() * self.weight
+
 class SelfAttention(nn.Module):
     """Self attention with RoPE embeddings applied inside attention."""
     def __init__(self, hidden_dim, num_heads):
@@ -157,9 +167,12 @@ class SelfAttention(nn.Module):
         self.qkv_proj = nn.Linear(hidden_dim, 3 * hidden_dim)
         self.out_proj = nn.Linear(hidden_dim, hidden_dim)
 
+        self.prenorm = RMSNorm(hidden_dim)
+
     def forward(self, x, cos, sin):
         batch_size, seq_len, _ = x.shape
-        
+        x = self.prenorm(x)
+
         qkv = self.qkv_proj(x)  # [B, seq_len, 3*hidden_dim]
         q, k, v = qkv.chunk(3, dim=-1)
 
@@ -176,7 +189,7 @@ class SelfAttention(nn.Module):
         attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.hidden_dim)  # [B, seq_len, hidden_dim]
         return x + self.out_proj(attn_output)
     
-
+class 
 class Pi0Tiny(nn.Module):
     """Tiny pi0-style scaffold for learning the model contract.
 

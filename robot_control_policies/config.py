@@ -33,15 +33,46 @@ def _resolve_default_path(default_entry, current_path):
     raise TypeError(f"Unsupported default entry: {default_entry}")
 
 
-def load_config(config_path):
+def _set_nested_value(config, dotted_key, value):
+    keys = dotted_key.split(".")
+    if any(key == "" for key in keys):
+        raise ValueError(f"Invalid override key: {dotted_key}")
+
+    current = config
+    for key in keys[:-1]:
+        current = current.setdefault(key, {})
+        if not isinstance(current, dict):
+            raise ValueError(f"Cannot set nested override under non-dict key: {key}")
+
+    current[keys[-1]] = value
+
+
+def parse_dotlist_overrides(overrides):
+    parsed = {}
+    for override in overrides or []:
+        if "=" not in override:
+            raise ValueError(
+                f"CLI override must use key=value format, got: {override}"
+            )
+
+        key, raw_value = override.split("=", 1)
+        value = yaml.safe_load(raw_value)
+        _set_nested_value(parsed, key, value)
+
+    return parsed
+
+
+def load_config(config_path, cli_overrides=None):
     path = Path(config_path).resolve()
     with path.open("r") as f:
         config = yaml.safe_load(f) or {}
 
     defaults = config.pop("defaults", [])
+    overrides = config.pop("overrides", {})
     composed = {}
     for default_entry in defaults:
         default_path = _resolve_default_path(default_entry, path)
         composed = _deep_merge(composed, load_config(default_path))
 
-    return _deep_merge(composed, config)
+    composed = _deep_merge(_deep_merge(composed, config), overrides)
+    return _deep_merge(composed, parse_dotlist_overrides(cli_overrides))

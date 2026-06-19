@@ -4,3 +4,12 @@ defaults:
   - ../train/local
 
 experiment_name: mlp_board_clean_state_only
+
+overrides:
+  train:
+    output_dir: runs/mlp_board_clean_state_only
+
+  dataset:
+    horizons:
+      obs: 1
+      action: 25

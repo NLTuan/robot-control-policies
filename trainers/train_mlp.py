@@ -34,17 +34,23 @@ def count_parameters(model):
 def flatten_batch(batch, config):
     state_key = config["dataset"]["keys"]["state"]
     action_key = config["dataset"]["keys"]["action"]
+    image_keys = config["dataset"]["keys"].get("images", [])
 
     state = batch[state_key].float().flatten(start_dim=1)
     action = batch[action_key].float().flatten(start_dim=1)
-    return state, action
+    images = [batch[key].float().flatten(start_dim=1) for key in image_keys]
+    return state, action, images
 
 
-def train(config_path="configs/experiment/mlp_board_clean.yaml"):
-    config = load_config(config_path)
+def train(config_path="configs/experiment/mlp_board_clean.yaml", cli_overrides=None):
+    config = load_config(config_path, cli_overrides=cli_overrides)
     dataloader, features = make_dataloader(config)
 
     first_batch = next(iter(dataloader))
+
+    print("=== Dataset Sample ===")
+    print({key: value.shape for key, value in first_batch.items() if type(value) is torch.Tensor})
+    print("======================")
     x, y = flatten_batch(first_batch, config)
     device = get_device(config["train"])
 
@@ -99,5 +105,5 @@ def train(config_path="configs/experiment/mlp_board_clean.yaml"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/experiment/mlp_board_clean.yaml")
-    args = parser.parse_args()
-    train(args.config)
+    args, cli_overrides = parser.parse_known_args()
+    train(args.config, cli_overrides=cli_overrides)

@@ -4,3 +4,7 @@ defaults:
   - ../train/overfit
 
 experiment_name: overfit_mlp_board_clean
+
+overrides:
+  train:
+    output_dir: runs/overfit_mlp_board_clean

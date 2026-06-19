@@ -78,6 +78,10 @@ defaults:
   - ../train/local
 
 experiment_name: mlp_board_clean_state_only
+
+overrides:
+  train:
+    output_dir: runs/mlp_board_clean_state_only
 ```
 
 When loaded, those files are merged into one Python dictionary:
@@ -88,7 +92,37 @@ from robot_control_policies.config import load_config
 config = load_config("configs/experiment/mlp_board_clean.yaml")
 ```
 
-Later files override earlier defaults if they define the same field.
+Composition order is:
+
+```text
+defaults -> experiment fields -> overrides -> CLI dotlist overrides
+```
+
+Use `overrides` for run-specific changes that should not be shared by every
+experiment using the same dataset, model, or train preset:
+
+```yaml
+overrides:
+  dataset:
+    loader:
+      batch_size: 64
+  train:
+    optimizer:
+      lr: 0.0001
+```
+
+For quick local experiments, you can override fields from the command line:
+
+```bash
+uv run python trainers/train_mlp.py \
+  --config configs/experiment/mlp_board_clean.yaml \
+  train.optimizer.lr=0.0001 \
+  dataset.loader.batch_size=64 \
+  train.steps.max_steps=100
+```
+
+Values are parsed as YAML, so numbers become numbers, `true`/`false` become
+booleans, and list values like `model.hidden_dims=[128, 128]` work too.
 
 ## Dataset Configs
 

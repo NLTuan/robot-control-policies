@@ -6,7 +6,8 @@ dataset:
     state: observation.state
     action: action
     images:
-      - observation.images.main
+      - observation.images.camera1
+      - observation.images.camera2
 
   horizons:
     obs: 1

@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-
+from torch.nn import functional as F
 
 class RotaryPositionEmbedding(nn.Module):
     """Rotary position embeddings for attention q/k tensors.
@@ -156,6 +156,7 @@ class RMSNorm(nn.Module):
 
 class SelfAttention(nn.Module):
     """Self attention with RoPE embeddings applied inside attention."""
+
     def __init__(self, hidden_dim, num_heads):
         super().__init__()
         if hidden_dim % num_heads != 0:
@@ -171,6 +172,7 @@ class SelfAttention(nn.Module):
 
     def forward(self, x, cos, sin):
         batch_size, seq_len, _ = x.shape
+        residual = x
         x = self.prenorm(x)
 
         qkv = self.qkv_proj(x)  # [B, seq_len, 3*hidden_dim]
@@ -187,9 +189,23 @@ class SelfAttention(nn.Module):
         attn_weights = torch.softmax(attn_scores, dim=-1)
         attn_output = torch.matmul(attn_weights, v)  # [B, num_heads, seq_len, head_dim]
         attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.hidden_dim)  # [B, seq_len, hidden_dim]
-        return x + self.out_proj(attn_output)
+        return residual + self.out_proj(attn_output)
     
-class 
+class FeedForward(nn.Module):
+    """Standard transformer MLP with residual connection."""
+    def __init__(self, hidden_dim):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_dim, 4 * hidden_dim),
+            nn.GELU(),
+            nn.Linear(4 * hidden_dim, hidden_dim),
+        )
+        self.prenorm = RMSNorm(hidden_dim)
+
+    def forward(self, x):
+        return x + self.mlp(self.prenorm(x))
+    
+
 class Pi0Tiny(nn.Module):
     """Tiny pi0-style scaffold for learning the model contract.
 
@@ -258,31 +274,17 @@ class Pi0Tiny(nn.Module):
         head_dim = hidden_dim // num_heads
         self.rope = RotaryPositionEmbedding(head_dim)
 
-        # TODO: tiny token mixer.
-        # Write a small RoPE transformer block yourself:
-        #   x -> norm -> qkv projection
-        #   q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
-        #   attention -> residual -> MLP -> residual
-        # self.transformer = ...
         self.depth = depth
         self.attn_layers = nn.ModuleList([SelfAttention(hidden_dim, num_heads) for _ in range(depth)])
         self.mlp_action_layers = nn.ModuleList(
             [
-                nn.Sequential(
-                    nn.Linear(hidden_dim, 4 * hidden_dim),
-                    nn.GELU(),
-                    nn.Linear(4 * hidden_dim, hidden_dim),
-                )
+                FeedForward(hidden_dim)
                 for _ in range(depth)
             ]
         )
         self.mlp_obs_layers = nn.ModuleList(
             [
-                nn.Sequential(
-                    nn.Linear(hidden_dim, 4 * hidden_dim),
-                    nn.GELU(),
-                    nn.Linear(4 * hidden_dim, hidden_dim),
-                )
+                FeedForward(hidden_dim)
                 for _ in range(depth)
             ]
         )   
@@ -337,8 +339,8 @@ class Pi0Tiny(nn.Module):
                 dim=1,
             )
 
-            context_tokens = context_tokens + self.mlp_obs_layers[layer_idx](context_tokens)
-            action_tokens = action_tokens + self.mlp_action_layers[layer_idx](action_tokens)
+            context_tokens = self.mlp_obs_layers[layer_idx](context_tokens)
+            action_tokens = self.mlp_action_layers[layer_idx](action_tokens)
 
         return self.flow_head(action_tokens)
 
@@ -346,14 +348,18 @@ class Pi0Tiny(nn.Module):
         """TODO: Flow-matching objective.
 
         Target recipe:
-          noise = randn_like(actions)
-          t = sample from Beta(1.5, 1.0), shape [B]
-          x_t = t * noise + (1 - t) * actions
-          target_flow = noise - actions
-          pred_flow = self.forward(state, x_t, t, images, task_tokens)
-          return mse(pred_flow, target_flow)
         """
-        raise NotImplementedError
+        batch_size, action_horizon, action_dim = actions.shape
+        t = torch.randn(batch_size)
+        noise = torch.randn_like(actions)
+
+        noised_actions = t * actions + (1-t) * noise
+
+        pred_flow= self.forward(state, noised_actions, t, images=images, task_tokens=task_tokens)
+
+        target_flow = actions - noised_actions
+        loss = F.mse_loss(pred_flow, target_flow)
+        return loss
 
     def sample_actions(self, state, images=None, task_tokens=None, num_steps=10):
         """TODO: Euler sampler.

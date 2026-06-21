@@ -378,4 +378,19 @@ class Pi0Tiny(nn.Module):
               actions = actions + dt * flow
           return actions
         """
+
+        batch_size = state.shape[0]
+        actions = torch.randn(
+            batch_size,
+            self.action_horizon,
+            self.action_dim,
+            device=state.device,
+        )
+
+        for step in range(num_steps):
+            t = torch.full((batch_size,), step / num_steps, device=state.device)
+            flow = self.forward(state, actions, t, images=images, task_tokens=task_tokens)
+            actions = actions + (1.0 / num_steps) * flow
+
+
         raise NotImplementedError

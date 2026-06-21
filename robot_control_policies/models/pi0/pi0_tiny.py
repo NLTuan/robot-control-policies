@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+
 class RotaryPositionEmbedding(nn.Module):
     """Rotary position embeddings for attention q/k tensors.
 
@@ -154,6 +155,7 @@ class RMSNorm(nn.Module):
         norm = x.pow(2).mean(dim=-1, keepdim=True) + self.eps
         return x / norm.sqrt() * self.weight
 
+
 class SelfAttention(nn.Module):
     """Self attention with RoPE embeddings applied inside attention."""
 
@@ -178,19 +180,21 @@ class SelfAttention(nn.Module):
         qkv = self.qkv_proj(x)  # [B, seq_len, 3*hidden_dim]
         q, k, v = qkv.chunk(3, dim=-1)
 
-        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)  # [B, num_heads, seq_len, head_dim]
+        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         k = k.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         v = v.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
 
         q = apply_rope(q, cos, sin)
         k = apply_rope(k, cos, sin)
 
-        attn_scores = torch.matmul(q, k.transpose(-2, -1)) / (self.head_dim ** 0.5)  # [B, num_heads, seq_len, seq_len]
+        attn_scores = torch.matmul(q, k.transpose(-2, -1)) / (self.head_dim ** 0.5)
         attn_weights = torch.softmax(attn_scores, dim=-1)
         attn_output = torch.matmul(attn_weights, v)  # [B, num_heads, seq_len, head_dim]
-        attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.hidden_dim)  # [B, seq_len, hidden_dim]
+        attn_output = attn_output.transpose(1, 2).contiguous()
+        attn_output = attn_output.view(batch_size, seq_len, self.hidden_dim)
         return residual + self.out_proj(attn_output)
-    
+
+
 class FeedForward(nn.Module):
     """Standard transformer MLP with residual connection."""
     def __init__(self, hidden_dim):
@@ -204,7 +208,7 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         return x + self.mlp(self.prenorm(x))
-    
+
 
 class Pi0Tiny(nn.Module):
     """Tiny pi0-style scaffold for learning the model contract.
@@ -345,19 +349,21 @@ class Pi0Tiny(nn.Module):
         return self.flow_head(action_tokens)
 
     def compute_loss(self, state, actions, images=None, task_tokens=None):
-        """TODO: Flow-matching objective.
-
-        Target recipe:
-        """
-        batch_size, action_horizon, action_dim = actions.shape
-        t = torch.randn(batch_size)
+        """Flow-matching loss for action generation."""
+        batch_size = actions.shape[0]
+        t = torch.rand(batch_size, device=actions.device)
         noise = torch.randn_like(actions)
 
-        noised_actions = t * actions + (1-t) * noise
+        noised_actions = (1.0 - t[:, None, None]) * noise + t[:, None, None] * actions
+        target_flow = actions - noise
 
-        pred_flow= self.forward(state, noised_actions, t, images=images, task_tokens=task_tokens)
-
-        target_flow = actions - noised_actions
+        pred_flow = self.forward(
+            state,
+            noised_actions,
+            t,
+            images=images,
+            task_tokens=task_tokens,
+        )
         loss = F.mse_loss(pred_flow, target_flow)
         return loss
 

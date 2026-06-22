@@ -197,6 +197,7 @@ class SelfAttention(nn.Module):
 
 class FeedForward(nn.Module):
     """Standard transformer MLP with residual connection."""
+
     def __init__(self, hidden_dim):
         super().__init__()
         self.mlp = nn.Sequential(
@@ -279,19 +280,15 @@ class Pi0Tiny(nn.Module):
         self.rope = RotaryPositionEmbedding(head_dim)
 
         self.depth = depth
-        self.attn_layers = nn.ModuleList([SelfAttention(hidden_dim, num_heads) for _ in range(depth)])
+        self.attn_layers = nn.ModuleList(
+            [SelfAttention(hidden_dim, num_heads) for _ in range(depth)]
+        )
         self.mlp_action_layers = nn.ModuleList(
-            [
-                FeedForward(hidden_dim)
-                for _ in range(depth)
-            ]
+            [FeedForward(hidden_dim) for _ in range(depth)]
         )
         self.mlp_obs_layers = nn.ModuleList(
-            [
-                FeedForward(hidden_dim)
-                for _ in range(depth)
-            ]
-        )   
+            [FeedForward(hidden_dim) for _ in range(depth)]
+        )
 
         # action tokens -> predicted flow [B, action_horizon, action_dim]
         self.flow_head = nn.Linear(hidden_dim, action_dim)
@@ -368,18 +365,25 @@ class Pi0Tiny(nn.Module):
         return loss
 
     def sample_actions(self, state, images=None, task_tokens=None, num_steps=10):
-        """TODO: Euler sampler.
+        """Generate an action chunk with Euler integration.
 
-        Target recipe:
+        This follows the same time convention as `compute_loss`:
+        `t=0` is noise and `t=1` is data.
+
+        Recipe:
           actions = randn([B, action_horizon, action_dim])
-          dt = -1 / num_steps
-          for t from 1 -> 0:
+          dt = 1 / num_steps
+          for t from 0 -> 1:
               flow = self.forward(state, actions, t, images, task_tokens)
               actions = actions + dt * flow
           return actions
         """
 
+        if num_steps <= 0:
+            raise ValueError("num_steps must be positive")
+
         batch_size = state.shape[0]
+        dt = 1.0 / num_steps
         actions = torch.randn(
             batch_size,
             self.action_horizon,
@@ -390,6 +394,6 @@ class Pi0Tiny(nn.Module):
         for step in range(num_steps):
             t = torch.full((batch_size,), step / num_steps, device=state.device)
             flow = self.forward(state, actions, t, images=images, task_tokens=task_tokens)
-            actions = actions + (1.0 / num_steps) * flow
+            actions = actions + dt * flow
 
         return actions

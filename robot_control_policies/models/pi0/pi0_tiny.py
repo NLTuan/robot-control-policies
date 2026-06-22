@@ -176,6 +176,15 @@ class FiLMModulation(nn.Module):
         alpha = self.alpha_proj(cond_embs)[:,None,:]
         return x * (1.0 + alpha)
 
+
+def build_prefix_suffix_mask(context_len, action_len, device):
+    """Block context tokens from attending to noisy action tokens."""
+    seq_len = context_len + action_len
+    mask = torch.zeros(seq_len, seq_len, device=device, dtype=torch.bool)
+    mask[:context_len, context_len:] = True
+    return mask
+
+
 class SelfAttention(nn.Module):
     """Self attention with RoPE embeddings applied inside attention."""
 
@@ -192,7 +201,7 @@ class SelfAttention(nn.Module):
 
         self.prenorm = RMSNorm(hidden_dim)
 
-    def forward(self, x, cos, sin):
+    def forward(self, x, cos, sin, attn_mask=None):
         batch_size, seq_len, _ = x.shape
         residual = x
         x = self.prenorm(x)
@@ -208,6 +217,11 @@ class SelfAttention(nn.Module):
         k = apply_rope(k, cos, sin)
 
         attn_scores = torch.matmul(q, k.transpose(-2, -1)) / (self.head_dim ** 0.5)
+        if attn_mask is not None:
+            attn_scores = attn_scores.masked_fill(
+                attn_mask[None, None, :, :],
+                torch.finfo(attn_scores.dtype).min,
+            )
         attn_weights = torch.softmax(attn_scores, dim=-1)
         attn_output = torch.matmul(attn_weights, v)  # [B, num_heads, seq_len, head_dim]
         attn_output = attn_output.transpose(1, 2).contiguous()
@@ -369,8 +383,13 @@ class Pi0Tiny(nn.Module):
         for layer_idx in range(self.depth):
             tokens = torch.cat([context_tokens, action_tokens], dim=1)
             cos, sin = self.rope(tokens.shape[1], device=tokens.device)
+            attn_mask = build_prefix_suffix_mask(
+                context_tokens.shape[1],
+                action_tokens.shape[1],
+                tokens.device,
+            )
 
-            tokens = self.attn_layers[layer_idx](tokens, cos, sin)
+            tokens = self.attn_layers[layer_idx](tokens, cos, sin, attn_mask=attn_mask)
 
             context_tokens, action_tokens = torch.split(
                 tokens,

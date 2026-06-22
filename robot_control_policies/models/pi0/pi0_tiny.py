@@ -331,7 +331,7 @@ class Pi0Tiny(nn.Module):
 
         self.depth = depth
         
-        self.film_modulation_attn = nn.ModuleList(
+        self.attn_action_film_layers = nn.ModuleList(
             [FiLMModulation(hidden_dim) for _ in range(depth)]
         )
         
@@ -384,7 +384,7 @@ class Pi0Tiny(nn.Module):
         time_emb = self.time_emb(t.float().reshape(batch_size, 1))
 
         for layer_idx in range(self.depth):
-            action_tokens = self.film_modulation_attn[layer_idx].forward_pre(action_tokens, time_emb)
+            action_tokens = self.attn_action_film_layers[layer_idx].forward_pre(action_tokens, time_emb)
 
             tokens = torch.cat([context_tokens, action_tokens], dim=1)
             cos, sin = self.rope(tokens.shape[1], device=tokens.device)
@@ -402,7 +402,7 @@ class Pi0Tiny(nn.Module):
                 dim=1,
             )
 
-            action_tokens = self.film_modulation_attn[layer_idx].forward_post(action_tokens, time_emb)
+            action_tokens = self.attn_action_film_layers[layer_idx].forward_post(action_tokens, time_emb)
             
             context_tokens = self.mlp_obs_layers[layer_idx](context_tokens)
             action_tokens = self.mlp_action_layers[layer_idx](action_tokens, time_emb)

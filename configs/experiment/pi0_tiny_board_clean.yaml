@@ -1,13 +1,13 @@
 defaults:
   - ../dataset/board_clean
-  - ../model/mlp
+  - ../model/pi0_tiny
   - ../train/default
 
-experiment_name: mlp_board_clean_state_only
+experiment_name: pi0_tiny_board_clean
 
 overrides:
   train:
-    output_dir: runs/mlp_board_clean_state_only
+    output_dir: runs/pi0_tiny_board_clean
 
   dataset:
     horizons:

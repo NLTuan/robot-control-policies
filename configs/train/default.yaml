@@ -1,5 +1,5 @@
-train:
-  name: local
+1train:
+  name: default
   seed: 42
   device: auto
   precision: fp32
@@ -19,4 +19,4 @@ train:
     save_every: 1000
     eval_every: 1000
 
-  output_dir: runs/local
+  output_dir: runs/default

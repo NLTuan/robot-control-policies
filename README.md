@@ -75,7 +75,7 @@ The config loader in `robot_control_policies/config.py` supports a small
 defaults:
   - ../dataset/board_clean
   - ../model/mlp
-  - ../train/local
+  - ../train/default
 
 experiment_name: mlp_board_clean_state_only
 

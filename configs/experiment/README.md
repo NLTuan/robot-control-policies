@@ -10,7 +10,7 @@ dataset, model, or train config:
 defaults:
   - ../dataset/board_clean
   - ../model/mlp
-  - ../train/local
+  - ../train/default
 
 experiment_name: mlp_board_clean_state_only
 

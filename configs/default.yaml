@@ -1,6 +1,6 @@
 defaults:
   - dataset: board_clean
   - model: mlp
-  - train: local
+  - train: default
 
 experiment_name: ${model.name}_${dataset.name}

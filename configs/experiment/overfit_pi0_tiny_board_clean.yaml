@@ -1,0 +1,18 @@
+defaults:
+  - ../dataset/board_clean
+  - ../model/pi0_tiny
+  - ../train/overfit
+
+experiment_name: overfit_pi0_tiny_board_clean
+
+overrides:
+  train:
+    output_dir: runs/overfit_pi0_tiny_board_clean
+
+  dataset:
+    horizons:
+      obs: 1
+      action: 25
+    loader:
+      batch_size: 8
+      num_workers: 0

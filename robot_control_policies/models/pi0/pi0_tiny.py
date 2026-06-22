@@ -155,6 +155,26 @@ class RMSNorm(nn.Module):
         norm = x.pow(2).mean(dim=-1, keepdim=True) + self.eps
         return x / norm.sqrt() * self.weight
 
+class FiLMModulation(nn.Module):
+    def __init__(self, hidden_dim):
+        super().__init__()
+        self.gamma_proj = nn.Linear(hidden_dim, hidden_dim)
+        self.beta_proj = nn.Linear(hidden_dim, hidden_dim)
+        self.alpha_proj = nn.Linear(hidden_dim, hidden_dim)
+
+    def forward_pre(self, x, cond_embs=None):
+        if cond_embs is None:
+            return x
+        gamma = self.gamma_proj(cond_embs)[:,None,:]
+        beta = self.beta_proj(cond_embs)[:,None,:]
+
+        return x * (1.0 + gamma) + beta
+
+    def forward_post(self,x, cond_embs=None):
+        if cond_embs is None:
+            return x
+        alpha = self.alpha_proj(cond_embs)[:,None,:]
+        return x * (1.0 + alpha)
 
 class SelfAttention(nn.Module):
     """Self attention with RoPE embeddings applied inside attention."""
@@ -192,13 +212,15 @@ class SelfAttention(nn.Module):
         attn_output = torch.matmul(attn_weights, v)  # [B, num_heads, seq_len, head_dim]
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.view(batch_size, seq_len, self.hidden_dim)
-        return residual + self.out_proj(attn_output)
+        attn_output = self.out_proj(attn_output)
+
+        return residual + attn_output
 
 
 class FeedForward(nn.Module):
     """Standard transformer MLP with residual connection."""
 
-    def __init__(self, hidden_dim):
+    def __init__(self, hidden_dim, use_film=True):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(hidden_dim, 4 * hidden_dim),
@@ -207,8 +229,22 @@ class FeedForward(nn.Module):
         )
         self.prenorm = RMSNorm(hidden_dim)
 
-    def forward(self, x):
-        return x + self.mlp(self.prenorm(x))
+        self.film = FiLMModulation(hidden_dim) if use_film else None
+
+    def forward(self, x, cond_embs=None):
+            
+        residual = x
+        x = self.prenorm(x)
+        if self.film is not None:
+            x = self.film.forward_pre(x, cond_embs)
+            
+        x = self.mlp(x)
+        
+        if self.film is not None:
+            x = self.film.forward_post(x, cond_embs)
+
+        return residual + x
+
 
 
 class Pi0Tiny(nn.Module):
@@ -284,10 +320,10 @@ class Pi0Tiny(nn.Module):
             [SelfAttention(hidden_dim, num_heads) for _ in range(depth)]
         )
         self.mlp_action_layers = nn.ModuleList(
-            [FeedForward(hidden_dim) for _ in range(depth)]
+            [FeedForward(hidden_dim, use_film=True) for _ in range(depth)]
         )
         self.mlp_obs_layers = nn.ModuleList(
-            [FeedForward(hidden_dim) for _ in range(depth)]
+            [FeedForward(hidden_dim, use_film=False) for _ in range(depth)]
         )
 
         # action tokens -> predicted flow [B, action_horizon, action_dim]
@@ -327,11 +363,13 @@ class Pi0Tiny(nn.Module):
 
         action_tokens = self.action_proj(noisy_actions.float())
         time_emb = self.time_emb(t.float().reshape(batch_size, 1))
-        action_tokens = action_tokens + time_emb[:, None, :]
+
+
 
         for layer_idx in range(self.depth):
             tokens = torch.cat([context_tokens, action_tokens], dim=1)
             cos, sin = self.rope(tokens.shape[1], device=tokens.device)
+
             tokens = self.attn_layers[layer_idx](tokens, cos, sin)
 
             context_tokens, action_tokens = torch.split(
@@ -341,7 +379,7 @@ class Pi0Tiny(nn.Module):
             )
 
             context_tokens = self.mlp_obs_layers[layer_idx](context_tokens)
-            action_tokens = self.mlp_action_layers[layer_idx](action_tokens)
+            action_tokens = self.mlp_action_layers[layer_idx](action_tokens, time_emb)
 
         return self.flow_head(action_tokens)
 

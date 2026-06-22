@@ -392,5 +392,4 @@ class Pi0Tiny(nn.Module):
             flow = self.forward(state, actions, t, images=images, task_tokens=task_tokens)
             actions = actions + (1.0 / num_steps) * flow
 
-
-        raise NotImplementedError
+        return actions

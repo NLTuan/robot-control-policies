@@ -34,12 +34,13 @@ def count_parameters(model):
 def flatten_batch(batch, config):
     state_key = config["dataset"]["keys"]["state"]
     action_key = config["dataset"]["keys"]["action"]
-    image_keys = config["dataset"]["keys"].get("images", [])
+    image_keys = config["dataset"]["keys"]["images"]
 
     state = batch[state_key].float().flatten(start_dim=1)
     action = batch[action_key].float().flatten(start_dim=1)
-    state = torch.cat([batch[key].float().flatten(start_dim=1).flatten(start_dim=1) for key in image_keys] + [state], dim=1)
-    return state, action
+    images = [batch[key].float().flatten(start_dim=1) for key in image_keys]
+    inputs = torch.cat([state, *images], dim=1)
+    return inputs, action
 
 
 def train(config_path="configs/experiment/mlp_board_clean.yaml", cli_overrides=None):

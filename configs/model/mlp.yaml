@@ -2,10 +2,6 @@ model:
   name: mlp
   type: mlp_policy
 
-  inputs:
-    use_state: true
-    use_images: false
-
   hidden_dims:
     - 4
     - 4

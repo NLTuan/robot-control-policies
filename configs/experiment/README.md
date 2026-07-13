@@ -12,7 +12,7 @@ defaults:
   - ../model/mlp
   - ../train/default
 
-experiment_name: mlp_board_clean_state_only
+experiment_name: mlp_board_clean
 
 overrides:
   dataset:
@@ -21,7 +21,7 @@ overrides:
   train:
     optimizer:
       lr: 0.0001
-    output_dir: runs/mlp_board_clean_state_only
+    output_dir: runs/mlp_board_clean
 ```
 
 The loader composes defaults first, then applies the experiment file, then

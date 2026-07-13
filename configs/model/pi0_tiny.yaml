@@ -2,10 +2,6 @@ model:
   name: pi0_tiny
   type: pi0_tiny
 
-  inputs:
-    use_state: true
-    use_images: false
-
   hidden_dim: 128
   depth: 2
   num_heads: 4

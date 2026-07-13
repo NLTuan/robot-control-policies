@@ -6,7 +6,6 @@ from torch.utils.data import DataLoader
 
 def make_dataloader(config):
     dataset_cfg = config["dataset"]
-    model_cfg = config["model"]
 
     repo_id = dataset_cfg["repo_id"]
     batch_size = dataset_cfg["loader"]["batch_size"]
@@ -15,8 +14,7 @@ def make_dataloader(config):
 
     state_key = dataset_cfg["keys"]["state"]
     action_key = dataset_cfg["keys"]["action"]
-    image_keys = dataset_cfg["keys"].get("images", [])
-    use_images = model_cfg["inputs"].get("use_images", False)
+    image_keys = dataset_cfg["keys"]["images"]
 
     temp_dataset = LeRobotDataset(repo_id)
     dt = 1.0 / temp_dataset.fps
@@ -26,9 +24,8 @@ def make_dataloader(config):
         action_key: [i * dt for i in range(action_horizon)],
     }
 
-    if use_images:
-        for image_key in image_keys:
-            delta_timestamps[image_key] = [i * dt for i in range(-obs_horizon + 1, 1)]
+    for image_key in image_keys:
+        delta_timestamps[image_key] = [i * dt for i in range(-obs_horizon + 1, 1)]
 
     dataset = LeRobotDataset(repo_id, delta_timestamps=delta_timestamps)
 

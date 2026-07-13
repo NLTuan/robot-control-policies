@@ -3,11 +3,11 @@ defaults:
   - ../model/mlp
   - ../train/default
 
-experiment_name: mlp_board_clean_state_only
+experiment_name: mlp_board_clean
 
 overrides:
   train:
-    output_dir: runs/mlp_board_clean_state_only
+    output_dir: runs/mlp_board_clean
 
   dataset:
     horizons:

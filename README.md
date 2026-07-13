@@ -1,9 +1,9 @@
 # Robot Control Policies
 
 This repo is a small training harness for learning and replicating robot control
-policies. The current working path is a state-only MLP baseline trained from a
-LeRobot dataset. The structure is intentionally simple so new models and
-datasets can be added one at a time.
+policies. The current working path is a state-and-image MLP baseline trained
+from a LeRobot dataset. The structure is intentionally simple so new models
+and datasets can be added one at a time.
 
 DreamZero-style world/action models are a later target. For now, the repo is set
 up to make the basics reliable: config loading, dataset loading, model creation,
@@ -77,11 +77,11 @@ defaults:
   - ../model/mlp
   - ../train/default
 
-experiment_name: mlp_board_clean_state_only
+experiment_name: mlp_board_clean
 
 overrides:
   train:
-    output_dir: runs/mlp_board_clean_state_only
+    output_dir: runs/mlp_board_clean
 ```
 
 When loaded, those files are merged into one Python dictionary:
@@ -155,13 +155,15 @@ Important fields:
 - `repo_id`: LeRobot/Hugging Face dataset id or path.
 - `keys.state`: dataset column used as model input.
 - `keys.action`: dataset column used as the training target.
-- `keys.images`: image columns available for future vision policies.
+- `keys.images`: camera image columns. All current dataset batches include
+  these observations.
 - `horizons.obs`: number of observation timesteps requested.
 - `horizons.action`: number of future action timesteps requested.
 - `loader`: passed into the PyTorch `DataLoader`.
 
-The current MLP uses state only. Image keys are kept in the dataset config so
-future vision models can request them by setting `model.inputs.use_images: true`.
+All current training paths use state and the configured camera images. Image
+timestamps use the observation horizon, so the batch contract is stable across
+models.
 
 ## Model Configs
 
@@ -172,10 +174,6 @@ model:
   name: mlp
   type: mlp_policy
 
-  inputs:
-    use_state: true
-    use_images: false
-
   hidden_dims:
     - 256
     - 256
@@ -185,8 +183,9 @@ Important fields:
 
 - `name`: short model name used in experiment naming.
 - `type`: model family. The MLP trainer currently expects `mlp_policy`.
-- `inputs`: which data modalities the model consumes.
-- `hidden_dims`: layer widths passed into `MLPPolicy`.
+- `hidden_dims`: layer widths passed into `MLPPolicy`. The MLP flattens state
+  and camera pixels into one input vector; it is a pipeline baseline rather
+  than a spatial vision architecture.
 
 Keep model YAMLs descriptive. The Python class itself should not load YAML. The
 trainer or a future model builder should read config and instantiate the model.

@@ -89,12 +89,11 @@ def prepare_batch(batch, config):
 
     state_key = dataset_cfg["keys"]["state"]
     action_key = dataset_cfg["keys"]["action"]
-    image_keys = dataset_cfg["keys"].get("images", [])
-    use_images = model_cfg["inputs"].get("use_images", False)
+    image_keys = dataset_cfg["keys"]["images"]
 
     state = _flatten_state(batch[state_key])
     actions = _action_chunk(batch[action_key])
-    images = _image_sequence(batch, image_keys, model_cfg["image_size"]) if use_images else None
+    images = _image_sequence(batch, image_keys, model_cfg["image_size"])
     return state, actions, images
 
 

@@ -7,6 +7,8 @@ from robot_control_policies.config import load_config
 from robot_control_policies.dataset import make_dataloader
 from robot_control_policies.models.mlp import MLPPolicy
 
+from torchvision.transforms.transforms import Resize
+
 
 def get_device(train_cfg):
     if train_cfg["device"] == "auto":
@@ -32,13 +34,24 @@ def count_parameters(model):
 
 
 def flatten_batch(batch, config):
+
     state_key = config["dataset"]["keys"]["state"]
     action_key = config["dataset"]["keys"]["action"]
     image_keys = config["dataset"]["keys"]["images"]
 
     state = batch[state_key].float().flatten(start_dim=1)
     action = batch[action_key].float().flatten(start_dim=1)
-    images = [batch[key].float().flatten(start_dim=1) for key in image_keys]
+
+    batch_size = state.shape[0]
+
+
+    img_size = config['model']['image_size']
+    resize = Resize((img_size, img_size))
+
+    images = [
+        resize(batch[key].flatten(0, 1)).float().reshape(batch_size, -1)
+        for key in image_keys
+    ]
     inputs = torch.cat([state, *images], dim=1)
     return inputs, action
 
@@ -47,6 +60,7 @@ def train(config_path="configs/experiment/mlp_board_clean.yaml", cli_overrides=N
     config = load_config(config_path, cli_overrides=cli_overrides)
     dataloader, features = make_dataloader(config)
 
+    image_keys = config['dataset']['keys']['images']
     first_batch = next(iter(dataloader))
 
     x, y = flatten_batch(first_batch, config)

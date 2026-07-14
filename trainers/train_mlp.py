@@ -60,7 +60,6 @@ def train(config_path="configs/experiment/mlp_board_clean.yaml", cli_overrides=N
     config = load_config(config_path, cli_overrides=cli_overrides)
     dataloader, features = make_dataloader(config)
 
-    image_keys = config['dataset']['keys']['images']
     first_batch = next(iter(dataloader))
 
     x, y = flatten_batch(first_batch, config)

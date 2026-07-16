@@ -1,0 +1,13 @@
+# Milestone 1 only: this does not train a policy or download V-JEPA2.
+model:
+  name: vla_jepa_slots
+  type: vla_jepa
+
+  qwen_model_name: Qwen/Qwen3-VL-2B-Instruct
+
+  # Eight raw frames and V-JEPA2's tubelet size of two produce four
+  # video-state timesteps, hence three state transitions.
+  num_video_frames: 8
+  jepa_tubelet_size: 2
+  n_action_steps: 3
+  slots_per_transition: 8
